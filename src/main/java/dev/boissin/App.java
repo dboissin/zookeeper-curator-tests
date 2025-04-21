@@ -1,0 +1,93 @@
+package dev.boissin;
+
+import java.io.IOException;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import dev.boissin.model.FileItem;
+import dev.boissin.queue.ParserQueue;
+import dev.boissin.util.FileUtils;
+
+public class App {
+
+    private static final Logger logger = LoggerFactory.getLogger(App.class);
+    private static final CountDownLatch LATCH = new CountDownLatch(1);
+
+    public static void main(String[] args) {
+        if (args.length == 0 || args[0].equals("--help")) {
+            printHelp();
+            return;
+        }
+
+        String folderPath = null;
+        boolean worker = false;
+
+        try {
+            for (int i = 0; i < args.length; i++) {
+                switch (args[i]) {
+                    case "-f":
+                    case "--folder":
+                        folderPath = args[++i];
+                        break;
+                    case "-w":
+                    case "--worker":
+                        worker = true;
+                        break;
+                    default:
+                        throw new IllegalArgumentException("Unknown option: " + args[i]);
+                }
+            }
+
+            if (folderPath == null && !worker) {
+                throw new IllegalArgumentException("Folder path is required if process isn't a worker");
+            }
+
+            final String appId = System.getenv("APP_ID");
+            final ParserQueue parserQueue = new ParserQueue(worker, appId);
+            parserQueue.init(System.getenv("ZOOKEEPER_CONNECT"));
+
+            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                try {
+                    logger.info("Application {} is shutting down...", appId);
+                    parserQueue.close();
+                    LATCH.countDown();
+                } catch (IOException ioe) {
+                    logger.error("Error when stopping parser queue", ioe);
+                }
+            }));
+
+            if (!worker) {
+                logger.info("Send file items with folder path: {}", folderPath);
+                final List<FileItem> fileItems = FileUtils.generateFileItems(folderPath);
+                for (FileItem fileItem: fileItems) {
+                    parserQueue.sendFileItem(fileItem);
+                }
+            } else {
+                logger.info("Starting as worker with ID: {}", appId);
+                logger.info("Worker is running. Send SIGTERM to gracefully shut down.");
+                try {
+                    LATCH.await();
+                } catch (InterruptedException e) {
+                    logger.warn("Worker was interrupted while waiting");
+                }
+                logger.info("Worker has completed shutdown process");
+            }
+
+        } catch (Exception e) {
+                        System.err.println("Error: " + e.getMessage());
+            printHelp();
+            System.exit(1);
+        }
+    }
+
+    private static void printHelp() {
+        System.out.println("Usage: java -jar app.jar [options]");
+        System.out.println("Options:");
+        System.out.println("  -f, --folder <file path>   File path (required if not worker)");
+        System.out.println("  -w, --worker               Enable worker mode");
+    }
+
+}
