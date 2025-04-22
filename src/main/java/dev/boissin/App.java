@@ -10,6 +10,7 @@ import org.slf4j.LoggerFactory;
 import dev.boissin.model.FileItem;
 import dev.boissin.queue.ParserQueue;
 import dev.boissin.util.FileUtils;
+import dev.boissin.util.WorkerContext;
 
 public class App {
 
@@ -41,11 +42,19 @@ public class App {
                 }
             }
 
+            final String appId;
+            if (worker) {
+                final WorkerContext context = WorkerContext.getContext();
+                context.init(System.getenv("ZOOKEEPER_CONNECT"));
+                appId = "worker-" + context.getWorkerId();
+            } else {
+                appId = "client";
+            }
+
             if (folderPath == null && !worker) {
                 throw new IllegalArgumentException("Folder path is required if process isn't a worker");
             }
 
-            final String appId = System.getenv("APP_ID");
             final ParserQueue parserQueue = new ParserQueue(worker, appId);
             parserQueue.init(System.getenv("ZOOKEEPER_CONNECT"));
 
@@ -53,6 +62,7 @@ public class App {
                 try {
                     logger.info("Application {} is shutting down...", appId);
                     parserQueue.close();
+                    WorkerContext.getContext().close();
                     LATCH.countDown();
                 } catch (IOException ioe) {
                     logger.error("Error when stopping parser queue", ioe);
@@ -77,7 +87,7 @@ public class App {
             }
 
         } catch (Exception e) {
-                        System.err.println("Error: " + e.getMessage());
+            System.err.println("Error: " + e.getMessage());
             printHelp();
             System.exit(1);
         }
