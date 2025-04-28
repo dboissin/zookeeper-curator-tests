@@ -4,9 +4,6 @@ services:
   zookeeper1:
     image: zookeeper:3.9.3
     hostname: zookeeper1
-    ports:
-      - "2181:2181"
-      - "8081:8080"
     environment:
       - ZOO_MY_ID=1
       - ZOO_SERVERS=server.1=zookeeper1:2888:3888;2181 server.2=zookeeper2:2888:3888;2181 server.3=zookeeper3:2888:3888;2181
@@ -18,9 +15,6 @@ services:
   zookeeper2:
     image: zookeeper:3.9.3
     hostname: zookeeper2
-    ports:
-      - "2182:2181"
-      - "8082:8080"
     environment:
       - ZOO_MY_ID=2
       - ZOO_SERVERS=server.1=zookeeper1:2888:3888;2181 server.2=zookeeper2:2888:3888;2181 server.3=zookeeper3:2888:3888;2181
@@ -32,9 +26,6 @@ services:
   zookeeper3:
     image: zookeeper:3.9.3
     hostname: zookeeper3
-    ports:
-      - "2183:2181"
-      - "8083:8080"
     environment:
       - ZOO_MY_ID=3
       - ZOO_SERVERS=server.1=zookeeper1:2888:3888;2181 server.2=zookeeper2:2888:3888;2181 server.3=zookeeper3:2888:3888;2181
@@ -56,7 +47,6 @@ services:
       replicas: 2
     environment:
       - ZOOKEEPER_CONNECT=zookeeper1:2181,zookeeper2:2181,zookeeper3:2181
-      - LOG_LEVEL=INFO
 
 volumes:
   zookeeper1_data:

@@ -1,5 +1,6 @@
 package dev.boissin.util;
 
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.apache.curator.RetryPolicy;
@@ -14,10 +15,12 @@ import org.slf4j.LoggerFactory;
 public class WorkerContext {
 
     private static final Logger log = LoggerFactory.getLogger(WorkerContext.class);
+    private static final String WORKER_COUNTER_PATH = "/counters/workers";
+    private static final String DEFAULT_NAMESPACE = "test-zk-project";
+    private static final String NAMESPACE_ENV = "NAMESPACE";
 
     private CuratorFramework client;
     private AtomicReference<Long> workerId = new AtomicReference<>(null);
-    private static final String WORKER_COUNTER_PATH = "/counters/workers";
 
     private WorkerContext() {}
 
@@ -31,8 +34,16 @@ public class WorkerContext {
 
     public void init(String connectionString) {
         final RetryPolicy retryPolicy = new ExponentialBackoffRetry(1000, 3);
-        client = CuratorFrameworkFactory.newClient(connectionString, retryPolicy);
+        client = CuratorFrameworkFactory.builder()
+                .namespace(getNamespace())
+                .connectString(connectionString)
+                .retryPolicy(retryPolicy)
+                .build();
         client.start();
+    }
+
+    public String getNamespace() {
+        return Optional.ofNullable(System.getenv(NAMESPACE_ENV)).orElse(DEFAULT_NAMESPACE);
     }
 
     public long getWorkerId() {

@@ -9,6 +9,7 @@ import org.slf4j.LoggerFactory;
 
 import dev.boissin.model.FileItem;
 import dev.boissin.queue.ParserQueue;
+import dev.boissin.service.PhilosopherManager;
 import dev.boissin.util.FileUtils;
 import dev.boissin.util.WorkerContext;
 
@@ -43,12 +44,18 @@ public class App {
             }
 
             final String appId;
+            final PhilosopherManager dinner;
             if (worker) {
+                Thread.sleep(3000L);
                 final WorkerContext context = WorkerContext.getContext();
                 context.init(System.getenv("ZOOKEEPER_CONNECT"));
                 appId = "worker-" + context.getWorkerId();
+
+                dinner = new PhilosopherManager(3, 42L);
+                dinner.launch();
             } else {
                 appId = "client";
+                dinner = null;
             }
 
             if (folderPath == null && !worker) {
@@ -62,6 +69,9 @@ public class App {
                 try {
                     logger.info("Application {} is shutting down...", appId);
                     parserQueue.close();
+                    if (dinner != null) {
+                        dinner.close();
+                    }
                     WorkerContext.getContext().close();
                     LATCH.countDown();
                 } catch (IOException ioe) {
@@ -88,6 +98,7 @@ public class App {
 
         } catch (Exception e) {
             System.err.println("Error: " + e.getMessage());
+            logger.error("Error in main " + e.getMessage(), e);
             printHelp();
             System.exit(1);
         }
