@@ -7,11 +7,13 @@ import java.util.concurrent.CountDownLatch;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import dev.boissin.controller.MetricsController;
 import dev.boissin.model.FileItem;
 import dev.boissin.queue.ParserQueue;
 import dev.boissin.service.PhilosopherManager;
 import dev.boissin.util.FileUtils;
 import dev.boissin.util.WorkerContext;
+import io.micrometer.prometheusmetrics.PrometheusMeterRegistry;
 
 public class App {
 
@@ -45,6 +47,7 @@ public class App {
 
             final String appId;
             final PhilosopherManager dinner;
+            final MetricsController metricsController;
             if (worker) {
                 Thread.sleep(3000L);
                 final WorkerContext context = WorkerContext.getContext();
@@ -53,9 +56,12 @@ public class App {
 
                 dinner = new PhilosopherManager(3, 42L);
                 dinner.launch();
+
+                metricsController = new MetricsController((PrometheusMeterRegistry) context.getMeterRegistry());
             } else {
                 appId = "client";
                 dinner = null;
+                metricsController = null;
             }
 
             if (folderPath == null && !worker) {
@@ -71,6 +77,9 @@ public class App {
                     parserQueue.close();
                     if (dinner != null) {
                         dinner.close();
+                    }
+                    if (metricsController != null) {
+                        metricsController.close();
                     }
                     WorkerContext.getContext().close();
                     LATCH.countDown();

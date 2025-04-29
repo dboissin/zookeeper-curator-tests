@@ -4,6 +4,7 @@ import java.util.Comparator;
 import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
@@ -19,6 +20,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import dev.boissin.util.WorkerContext;
+import io.micrometer.core.instrument.Timer;
 
 public class Philosopher implements Runnable {
 
@@ -29,11 +31,10 @@ public class Philosopher implements Runnable {
     private final InterProcessSemaphoreV2 semaphore;
     private final CuratorFramework client;
 
-    // TODO replace by micrometer counters
-    private AtomicLong totalThinkDuration = new AtomicLong(0L);
-    private AtomicLong totalEatDuration = new AtomicLong(0L);
-    private AtomicLong totalTakeForkDuration = new AtomicLong(0L);
-    private AtomicLong totalReleaseForkDuration = new AtomicLong(0L);
+    private Timer thinkTimer;
+    private Timer eatTimer;
+    private Timer takeForkTimer;
+    private Timer releaseTimer;
 
     private final InterProcessMutex rightFork;
     private InterProcessMutex leftFork;
@@ -44,7 +45,30 @@ public class Philosopher implements Runnable {
     public Philosopher(long id, long seed, SharedCount sharedCount) throws Exception {
         this.rnd = new Random(seed);
         this.id = id;
-        this.client = WorkerContext.getContext().getClient();
+        final WorkerContext context = WorkerContext.getContext();
+
+        thinkTimer = Timer.builder("philosophers.state.duration")
+                .description("Duration in each state")
+                .tag("philosopher", "" + this.id)
+                .tag("state", "think")
+                .register(context.getMeterRegistry());
+        eatTimer = Timer.builder("philosophers.state.duration")
+                .description("Duration in each state")
+                .tag("philosopher", "" + this.id)
+                .tag("state", "eat")
+                .register(context.getMeterRegistry());
+        takeForkTimer = Timer.builder("philosophers.state.duration")
+                .description("Duration in each state")
+                .tag("philosopher", "" + this.id)
+                .tag("state", "take-fork")
+                .register(context.getMeterRegistry());
+        releaseTimer = Timer.builder("philosophers.state.duration")
+                .description("Duration in each state")
+                .tag("philosopher", "" + this.id)
+                .tag("state", "release-fork")
+                .register(context.getMeterRegistry());
+
+        this.client = context.getClient();
         this.semaphore = new InterProcessSemaphoreV2(client, PhilosopherManager.SEMAPHORE_PATH, sharedCount);
         this.rightFork = new InterProcessMutex(client, PhilosopherManager.FORKS_PATH + "/" + id + "/fork");
         this.forkPathCache = CuratorCache.build(client, PhilosopherManager.FORKS_PATH);
@@ -69,7 +93,7 @@ public class Philosopher implements Runnable {
         leftFork.acquire();
         final long duration = (System.nanoTime() - start) / 1_000_000L;
         log.info("Philosher {} is waiting {}ms to take forks.", id, duration);
-        totalTakeForkDuration.addAndGet(duration);
+        takeForkTimer.record(duration, TimeUnit.MILLISECONDS);
         return lease;
     }
 
@@ -80,7 +104,7 @@ public class Philosopher implements Runnable {
         lease.close();
         final long duration = (System.nanoTime() - start) / 1_000_000L;
         log.info("Philosher {} is waiting {}ms to release forks.", id, duration);
-        totalReleaseForkDuration.addAndGet(duration);
+        releaseTimer.record(duration, TimeUnit.MILLISECONDS);
     }
 
     private void think() throws InterruptedException {
@@ -90,14 +114,14 @@ public class Philosopher implements Runnable {
         latch.await();
         final long duration = (System.nanoTime() - start) / 1_000_000L;
         log.info("Philosher {} is thinking {}ms.", id, duration);
-        totalThinkDuration.addAndGet(duration);
+        thinkTimer.record(duration, TimeUnit.MILLISECONDS);
     }
 
     private void eat() throws InterruptedException {
         final long duration = rnd.nextLong(200, 800);
         log.info("Philosher {} is eating {}ms.", id, duration);
         Thread.sleep(duration);
-        totalEatDuration.addAndGet(duration);
+        eatTimer.record(duration, TimeUnit.MILLISECONDS);
     }
 
     @Override

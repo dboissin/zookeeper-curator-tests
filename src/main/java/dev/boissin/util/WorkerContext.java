@@ -12,6 +12,10 @@ import org.apache.curator.retry.RetryNTimes;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.prometheusmetrics.PrometheusConfig;
+import io.micrometer.prometheusmetrics.PrometheusMeterRegistry;
+
 public class WorkerContext {
 
     private static final Logger log = LoggerFactory.getLogger(WorkerContext.class);
@@ -19,10 +23,14 @@ public class WorkerContext {
     private static final String DEFAULT_NAMESPACE = "test-zk-project";
     private static final String NAMESPACE_ENV = "NAMESPACE";
 
+    private final PrometheusMeterRegistry prometheusRegistry;
+
     private CuratorFramework client;
     private AtomicReference<Long> workerId = new AtomicReference<>(null);
 
-    private WorkerContext() {}
+    private WorkerContext() {
+        prometheusRegistry = new PrometheusMeterRegistry(PrometheusConfig.DEFAULT);
+    }
 
     private static class WorkerContextHolder {
         private static final WorkerContext instance = new WorkerContext();
@@ -66,6 +74,10 @@ public class WorkerContext {
 
     public CuratorFramework getClient() {
         return client;
+    }
+
+    public MeterRegistry getMeterRegistry() {
+        return prometheusRegistry;
     }
 
     public void close() {

@@ -1,0 +1,11 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'dining-philosophers-services'
+    metrics_path: '/health/metrics'
+    dns_sd_configs:
+      - names: ['dining-philosophers']
+        type: A
+        port: 8080

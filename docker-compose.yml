@@ -34,11 +34,11 @@ services:
       - zookeeper3_data:/data
       - zookeeper3_logs:/logs
 
-  app:
+  dining-philosophers:
     build:
       context: .
       dockerfile: Dockerfile
-    hostname: app
+    hostname: dining-philosophers
     depends_on:
       - zookeeper1
       - zookeeper2
@@ -48,6 +48,24 @@ services:
     environment:
       - ZOOKEEPER_CONNECT=zookeeper1:2181,zookeeper2:2181,zookeeper3:2181
 
+  prometheus:
+    image: prom/prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    depends_on:
+      - dining-philosophers
+
+  grafana:
+    image: grafana/grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+
 volumes:
   zookeeper1_data:
   zookeeper1_logs:
@@ -55,3 +73,4 @@ volumes:
   zookeeper2_logs:
   zookeeper3_data:
   zookeeper3_logs:
+  grafana_data:
