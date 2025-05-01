@@ -1,5 +1,6 @@
 package dev.boissin.service;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Comparator;
 import java.util.Random;
 import java.util.Set;
@@ -9,6 +10,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
 import org.apache.curator.framework.CuratorFramework;
+import org.apache.curator.framework.imps.CuratorFrameworkState;
 import org.apache.curator.framework.recipes.cache.ChildData;
 import org.apache.curator.framework.recipes.cache.CuratorCache;
 import org.apache.curator.framework.recipes.cache.CuratorCacheListener;
@@ -16,6 +18,7 @@ import org.apache.curator.framework.recipes.locks.InterProcessMutex;
 import org.apache.curator.framework.recipes.locks.InterProcessSemaphoreV2;
 import org.apache.curator.framework.recipes.locks.Lease;
 import org.apache.curator.framework.recipes.shared.SharedCount;
+import org.apache.zookeeper.CreateMode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -70,7 +73,11 @@ public class Philosopher implements Runnable {
 
         this.client = context.getClient();
         this.semaphore = new InterProcessSemaphoreV2(client, PhilosopherManager.SEMAPHORE_PATH, sharedCount);
-        this.rightFork = new InterProcessMutex(client, PhilosopherManager.FORKS_PATH + "/" + id + "/fork");
+        this.client.create().creatingParentsIfNeeded().withMode(CreateMode.EPHEMERAL)
+                .forPath(PhilosopherManager.FORKS_PATH + "/" + id,
+                        ("Philosopher " + id + " right fork").getBytes(StandardCharsets.UTF_8));
+        this.rightFork = new InterProcessMutex(client, PhilosopherManager.FORKS_PATH + "-mutex/" + id + "/fork");
+
         this.forkPathCache = CuratorCache.build(client, PhilosopherManager.FORKS_PATH);
         final CuratorCacheListener listener = CuratorCacheListener.builder()
             .forCreates(this::handleForkPathChange)
@@ -136,6 +143,13 @@ public class Philosopher implements Runnable {
             }
         } catch (Exception e) {
             log.error("Philosopher error", e);
+            if (client != null && CuratorFrameworkState.STARTED == client.getState()) {
+                try {
+                    client.delete().guaranteed().forPath(PhilosopherManager.FORKS_PATH + "/" + id);
+                } catch (Exception e1) {
+                    log.error("Error deleting fork of stopped philosopher", e1);
+                }
+            }
         }
     }
 
@@ -166,13 +180,17 @@ public class Philosopher implements Runnable {
 
         log.debug("Philosopher {} previous fork {}", id, previousId);
 
-        // InterProcessMutex tmpLeftFork = leftFork;
-        // if (tmpLeftFork != null) {
-        //     tmpLeftFork.acquire();
-        // }
+        final InterProcessMutex tmpLeftFork = leftFork;
+        if (tmpLeftFork != null) {
+            if (!tmpLeftFork.acquire(30L, TimeUnit.MILLISECONDS)) {
+                log.warn("Philosopher {} can't acquire lock for update left fork {} by {}.",
+                        id, leftForkId.get(), previousId);
+                return;
+            }
+        }
         if (previousId > 0 && previousId != this.id) {
             log.info("Philosopher {} select left fork {}.", id, previousId);
-            this.leftFork = new InterProcessMutex(client, PhilosopherManager.FORKS_PATH + "/" + previousId);
+            this.leftFork = new InterProcessMutex(client, PhilosopherManager.FORKS_PATH + "-mutex/" + previousId);
             this.leftForkId.set(previousId);
             if (this.latch.getCount() > 0) {
                 this.latch.countDown();
@@ -182,9 +200,9 @@ public class Philosopher implements Runnable {
             this.latch = new CountDownLatch(1);
             this.leftFork = null;
         }
-        // if (tmpLeftFork != null) {
-        //     tmpLeftFork.release();
-        // }
+        if (tmpLeftFork != null) {
+            tmpLeftFork.release();
+        }
     }
 
     private void handleForkPathChange(ChildData childdata) {
