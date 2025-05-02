@@ -29,6 +29,11 @@ public class Philosopher implements Runnable {
 
     private static final Logger log = LoggerFactory.getLogger(Philosopher.class);
 
+    private static final int MAX_RANDOM_TIME_MS = 800;
+    private static final int MIN_RANDOM_TIME_MS = 200;
+    private static final int RETRY_UPDATE_FORK_LIMIT = 10;
+    private static final long UPDATE_FORK_ACQUIRE_TIMEOUT_MS = 100L;
+
     private final Random rnd;
     private final long id;
     private final InterProcessSemaphoreV2 semaphore;
@@ -116,7 +121,7 @@ public class Philosopher implements Runnable {
 
     private void think() throws InterruptedException {
         final long start = System.nanoTime();
-        Thread.sleep(rnd.nextLong(200, 800));
+        Thread.sleep(rnd.nextLong(MIN_RANDOM_TIME_MS, MAX_RANDOM_TIME_MS));
         log.debug("before acquire latch {}", this.id);
         latch.await();
         final long duration = (System.nanoTime() - start) / 1_000_000L;
@@ -125,7 +130,7 @@ public class Philosopher implements Runnable {
     }
 
     private void eat() throws InterruptedException {
-        final long duration = rnd.nextLong(200, 800);
+        final long duration = rnd.nextLong(MIN_RANDOM_TIME_MS, MAX_RANDOM_TIME_MS);
         log.info("Philosher {} is eating {}ms.", id, duration);
         Thread.sleep(duration);
         eatTimer.record(duration, TimeUnit.MILLISECONDS);
@@ -153,7 +158,7 @@ public class Philosopher implements Runnable {
         }
     }
 
-    private void updateLeftFork() throws Exception {
+    private void updateLeftFork(int retry) throws Exception {
         log.debug("Philosopher {} updating left fork.", id);
         final Set<Long> forksIds = forkPathCache.stream()
         .filter(forkNode -> forkNode.getPath().length() > PhilosopherManager.FORKS_PATH.length() + 1)
@@ -182,9 +187,16 @@ public class Philosopher implements Runnable {
 
         final InterProcessMutex tmpLeftFork = leftFork;
         if (tmpLeftFork != null) {
-            if (!tmpLeftFork.acquire(30L, TimeUnit.MILLISECONDS)) {
+            if (!tmpLeftFork.acquire(UPDATE_FORK_ACQUIRE_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
                 log.warn("Philosopher {} can't acquire lock for update left fork {} by {}.",
                         id, leftForkId.get(), previousId);
+                if (retry < RETRY_UPDATE_FORK_LIMIT) {
+                    log.warn("Philosopher {} retry update fork : {}", id, (retry + 1));
+                    updateLeftFork(retry + 1);
+                } else {
+                    log.error("Philosopher {} can't update left fork {} by {}.",
+                            id, leftForkId.get(), previousId);
+                }
                 return;
             }
         }
@@ -207,7 +219,7 @@ public class Philosopher implements Runnable {
 
     private void handleForkPathChange(ChildData childdata) {
         try {
-            updateLeftFork();
+            updateLeftFork(0);
         } catch (Exception e) {
             log.error("Error when updating left fork", e);
         }
