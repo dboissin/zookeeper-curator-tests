@@ -20,6 +20,7 @@ import org.apache.curator.framework.recipes.locks.InterProcessMutex;
 import org.apache.curator.framework.recipes.locks.InterProcessSemaphoreV2;
 import org.apache.curator.framework.recipes.locks.Lease;
 import org.apache.curator.framework.recipes.shared.SharedCount;
+import org.apache.curator.framework.recipes.shared.VersionedValue;
 import org.apache.zookeeper.CreateMode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,6 +40,7 @@ public class Philosopher implements Runnable {
 
     private final Random rnd;
     private final long id;
+    private final SharedCount sharedCount;
     private final InterProcessSemaphoreV2 semaphore;
     private final CuratorFramework client;
 
@@ -53,11 +55,10 @@ public class Philosopher implements Runnable {
     private CountDownLatch latch = new CountDownLatch(1);
     private AtomicLong leftForkId = new AtomicLong(-1L);
 
-    private final ExecutorService updateLeftForkExecutorService;
-
     public Philosopher(long id, SharedCount sharedCount) throws Exception {
         this.rnd = new Random();
         this.id = id;
+        this.sharedCount = sharedCount;
         final WorkerContext context = WorkerContext.getContext();
 
         thinkTimer = Timer.builder("philosophers.state.duration")
@@ -88,7 +89,6 @@ public class Philosopher implements Runnable {
                         ("Philosopher " + id + " right fork").getBytes(StandardCharsets.UTF_8));
         this.rightFork = new InterProcessMutex(client, PhilosopherManager.FORKS_PATH_MUTEX + id);
 
-        this.updateLeftForkExecutorService = Executors.newFixedThreadPool(UPDATE_FORK_LISTENER_THREAD_NB);
         this.forkPathCache = CuratorCache.build(client, PhilosopherManager.FORKS_PATH);
         final CuratorCacheListener listener = CuratorCacheListener.builder()
             .forCreates(this::handleForkPathChange)
@@ -211,17 +211,14 @@ public class Philosopher implements Runnable {
         if (tmpLeftFork != null) {
             tmpLeftFork.release();
         }
+
+        // update semaphore leases counter at half number of fork
+        setLeasesCounter(forksIds.size() / 2);
     }
 
     private void handleForkPathChange(ChildData childdata) {
         try {
-            updateLeftForkExecutorService.submit(() -> {
-                try {
-                    updateLeftFork(0);
-                } catch (Exception e) {
-                    log.error("Error when updating left fork", e);
-                }
-            });
+            updateLeftFork(0);
         } catch (Exception e) {
             log.error("Error when submit updating left fork", e);
         }
@@ -231,6 +228,18 @@ public class Philosopher implements Runnable {
         final long duration = (System.nanoTime() - start) / 1_000_000L;
         log.info(logMessage, id, duration);
         timer.record(duration, TimeUnit.MILLISECONDS);
+    }
+
+    private void setLeasesCounter(int value) throws Exception {
+        boolean updated = (sharedCount.getCount() == value);
+        while (!updated) {
+            sharedCount.getCount();
+            final VersionedValue<Integer> vv = sharedCount.getVersionedValue();
+            updated = sharedCount.trySetCount(vv, value);
+            if (updated) {
+                log.info("Semaphore shared counter : {}", sharedCount.getCount());
+            }
+        }
     }
 
 }

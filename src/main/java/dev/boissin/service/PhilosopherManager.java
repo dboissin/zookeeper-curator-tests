@@ -31,31 +31,17 @@ public class PhilosopherManager implements SharedCountListener {
         this.id = WorkerContext.getContext().getWorkerId() * 1000;
         localPhilosophers = new Philosopher[workerThreadNb];
         final CuratorFramework client = WorkerContext.getContext().getClient();
-        this.sharedCount = new SharedCount(client, LEASE_COUNT_PATH, -1);
+        this.sharedCount = new SharedCount(client, LEASE_COUNT_PATH, 0);
         this.sharedCount.addListener(this);
         this.sharedCount.start();
     }
 
     public void launch() throws Exception {
-        int countLocalPilosophers = 0;
         for (int i = 0; i < localPhilosophers.length; i++) {
             final Philosopher philosopher = new Philosopher(id + i, sharedCount);
             localPhilosophers[i] = philosopher;
             new Thread(philosopher).start();
-            countLocalPilosophers++;
         }
-        incrementLeasesCounter(countLocalPilosophers);
-    }
-
-    private void incrementLeasesCounter(int value) throws Exception {
-        if (value == 0) return;
-        boolean updated = false;
-        while (!updated) {
-            sharedCount.getCount();
-            final VersionedValue<Integer> vv = sharedCount.getVersionedValue();
-            updated = sharedCount.trySetCount(vv, vv.getValue() + value);    
-        }
-        log.info("Semaphore shared counter : {}", sharedCount.getCount());
     }
 
     @Override
