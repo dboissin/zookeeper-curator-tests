@@ -31,7 +31,7 @@ public class Philosopher implements Runnable {
 
     private static final int MAX_RANDOM_TIME_MS = 800;
     private static final int MIN_RANDOM_TIME_MS = 200;
-    private static final int RETRY_UPDATE_FORK_LIMIT = 10;
+    private static final int RETRY_UPDATE_FORK_LIMIT = 300;
     private static final long UPDATE_FORK_ACQUIRE_TIMEOUT_MS = 100L;
 
     private final Random rnd;
@@ -50,8 +50,8 @@ public class Philosopher implements Runnable {
     private CountDownLatch latch = new CountDownLatch(1);
     private AtomicLong leftForkId = new AtomicLong(-1L);
 
-    public Philosopher(long id, long seed, SharedCount sharedCount) throws Exception {
-        this.rnd = new Random(seed);
+    public Philosopher(long id, SharedCount sharedCount) throws Exception {
+        this.rnd = new Random();
         this.id = id;
         final WorkerContext context = WorkerContext.getContext();
 
@@ -81,7 +81,7 @@ public class Philosopher implements Runnable {
         this.client.create().creatingParentsIfNeeded().withMode(CreateMode.EPHEMERAL)
                 .forPath(PhilosopherManager.FORKS_PATH + "/" + id,
                         ("Philosopher " + id + " right fork").getBytes(StandardCharsets.UTF_8));
-        this.rightFork = new InterProcessMutex(client, PhilosopherManager.FORKS_PATH + "-mutex/" + id + "/fork");
+        this.rightFork = new InterProcessMutex(client, PhilosopherManager.FORKS_PATH_MUTEX + id);
 
         this.forkPathCache = CuratorCache.build(client, PhilosopherManager.FORKS_PATH);
         final CuratorCacheListener listener = CuratorCacheListener.builder()
@@ -90,22 +90,17 @@ public class Philosopher implements Runnable {
             .build();
         this.forkPathCache.listenable().addListener(listener);
         this.forkPathCache.start();
-        this.rightFork.acquire();
-        Thread.sleep(1000L);
-        this.rightFork.release();
     }
 
     private Lease takeForks() throws Exception {
         final long start = System.nanoTime();
-        log.info("before acquire semaphore {}", this.id);
-        Lease lease = this.semaphore.acquire();
-        log.info("before acquire right mutex {}", this.id);
+        log.debug("before acquire semaphore {}", this.id);
+        final Lease lease = this.semaphore.acquire();
+        log.debug("before acquire right mutex {}", this.id);
         rightFork.acquire();
-        log.info("before acquire left mutex : {} - {}", this.leftForkId.get(), this.id);
+        log.debug("before acquire left mutex : {} - {}", this.leftForkId.get(), this.id);
         leftFork.acquire();
-        final long duration = (System.nanoTime() - start) / 1_000_000L;
-        log.info("Philosher {} is waiting {}ms to take forks.", id, duration);
-        takeForkTimer.record(duration, TimeUnit.MILLISECONDS);
+        recordDuration(start, "Philosher {} is waiting {}ms to take forks.", takeForkTimer);
         return lease;
     }
 
@@ -114,9 +109,7 @@ public class Philosopher implements Runnable {
         rightFork.release();
         leftFork.release();
         lease.close();
-        final long duration = (System.nanoTime() - start) / 1_000_000L;
-        log.info("Philosher {} is waiting {}ms to release forks.", id, duration);
-        releaseTimer.record(duration, TimeUnit.MILLISECONDS);
+        recordDuration(start, "Philosher {} is waiting {}ms to release forks.", releaseTimer);
     }
 
     private void think() throws InterruptedException {
@@ -124,16 +117,13 @@ public class Philosopher implements Runnable {
         Thread.sleep(rnd.nextLong(MIN_RANDOM_TIME_MS, MAX_RANDOM_TIME_MS));
         log.debug("before acquire latch {}", this.id);
         latch.await();
-        final long duration = (System.nanoTime() - start) / 1_000_000L;
-        log.info("Philosher {} is thinking {}ms.", id, duration);
-        thinkTimer.record(duration, TimeUnit.MILLISECONDS);
+        recordDuration(start, "Philosher {} is thinking {}ms.", thinkTimer);
     }
 
     private void eat() throws InterruptedException {
-        final long duration = rnd.nextLong(MIN_RANDOM_TIME_MS, MAX_RANDOM_TIME_MS);
-        log.info("Philosher {} is eating {}ms.", id, duration);
-        Thread.sleep(duration);
-        eatTimer.record(duration, TimeUnit.MILLISECONDS);
+        final long start = System.nanoTime();
+        Thread.sleep(rnd.nextLong(MIN_RANDOM_TIME_MS, MAX_RANDOM_TIME_MS));
+        recordDuration(start, "Philosher {} is eating {}ms.", eatTimer);
     }
 
     @Override
@@ -202,7 +192,7 @@ public class Philosopher implements Runnable {
         }
         if (previousId > 0 && previousId != this.id) {
             log.info("Philosopher {} select left fork {}.", id, previousId);
-            this.leftFork = new InterProcessMutex(client, PhilosopherManager.FORKS_PATH + "-mutex/" + previousId);
+            this.leftFork = new InterProcessMutex(client, PhilosopherManager.FORKS_PATH_MUTEX + previousId);
             this.leftForkId.set(previousId);
             if (this.latch.getCount() > 0) {
                 this.latch.countDown();
@@ -224,5 +214,11 @@ public class Philosopher implements Runnable {
             log.error("Error when updating left fork", e);
         }
     }
-    
+
+    private void recordDuration(final long start, String logMessage, Timer timer) {
+        final long duration = (System.nanoTime() - start) / 1_000_000L;
+        log.info(logMessage, id, duration);
+        timer.record(duration, TimeUnit.MILLISECONDS);
+    }
+
 }

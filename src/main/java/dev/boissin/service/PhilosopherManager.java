@@ -20,17 +20,16 @@ public class PhilosopherManager implements SharedCountListener {
     static final String SEMAPHORE_PATH = "/philosophers/semaphore";
     static final String LEASE_COUNT_PATH = "/philosophers/lease-count";
     static final String FORKS_PATH = "/philosophers/forks";
+    static final String FORKS_PATH_MUTEX = FORKS_PATH + "-mutex/";
 
     private final long id;
-    private final long seed;
     private final Philosopher[] localPhilosophers;
     
     private final SharedCount sharedCount;
 
-    public PhilosopherManager(int workerThreadNb, long seed) throws Exception {
+    public PhilosopherManager(int workerThreadNb) throws Exception {
         this.id = WorkerContext.getContext().getWorkerId() * 1000;
         localPhilosophers = new Philosopher[workerThreadNb];
-        this.seed = seed;
         final CuratorFramework client = WorkerContext.getContext().getClient();
         this.sharedCount = new SharedCount(client, LEASE_COUNT_PATH, -1);
         this.sharedCount.addListener(this);
@@ -40,7 +39,7 @@ public class PhilosopherManager implements SharedCountListener {
     public void launch() throws Exception {
         int countLocalPilosophers = 0;
         for (int i = 0; i < localPhilosophers.length; i++) {
-            final Philosopher philosopher = new Philosopher(id + i, seed, sharedCount);
+            final Philosopher philosopher = new Philosopher(id + i, sharedCount);
             localPhilosophers[i] = philosopher;
             new Thread(philosopher).start();
             countLocalPilosophers++;

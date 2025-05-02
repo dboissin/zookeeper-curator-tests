@@ -2,6 +2,7 @@ package dev.boissin;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 
 import org.slf4j.Logger;
@@ -54,7 +55,8 @@ public class App {
                 context.init(System.getenv("ZOOKEEPER_CONNECT"));
                 appId = "worker-" + context.getWorkerId();
 
-                dinner = new PhilosopherManager(3, 42L);
+                dinner = new PhilosopherManager(Integer.parseInt(Optional
+                        .ofNullable(System.getenv("PHILOSOPHERS_NB")).orElse("3")));
                 dinner.launch();
 
                 metricsController = new MetricsController((PrometheusMeterRegistry) context.getMeterRegistry());
