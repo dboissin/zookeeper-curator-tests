@@ -5,6 +5,8 @@ import java.util.Comparator;
 import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
@@ -33,6 +35,7 @@ public class Philosopher implements Runnable {
     private static final int MIN_RANDOM_TIME_MS = 200;
     private static final int RETRY_UPDATE_FORK_LIMIT = 300;
     private static final long UPDATE_FORK_ACQUIRE_TIMEOUT_MS = 100L;
+    private static final int UPDATE_FORK_LISTENER_THREAD_NB = 2;
 
     private final Random rnd;
     private final long id;
@@ -49,6 +52,8 @@ public class Philosopher implements Runnable {
     private CuratorCache forkPathCache;
     private CountDownLatch latch = new CountDownLatch(1);
     private AtomicLong leftForkId = new AtomicLong(-1L);
+
+    private final ExecutorService updateLeftForkExecutorService;
 
     public Philosopher(long id, SharedCount sharedCount) throws Exception {
         this.rnd = new Random();
@@ -83,6 +88,7 @@ public class Philosopher implements Runnable {
                         ("Philosopher " + id + " right fork").getBytes(StandardCharsets.UTF_8));
         this.rightFork = new InterProcessMutex(client, PhilosopherManager.FORKS_PATH_MUTEX + id);
 
+        this.updateLeftForkExecutorService = Executors.newFixedThreadPool(UPDATE_FORK_LISTENER_THREAD_NB);
         this.forkPathCache = CuratorCache.build(client, PhilosopherManager.FORKS_PATH);
         final CuratorCacheListener listener = CuratorCacheListener.builder()
             .forCreates(this::handleForkPathChange)
@@ -209,9 +215,15 @@ public class Philosopher implements Runnable {
 
     private void handleForkPathChange(ChildData childdata) {
         try {
-            updateLeftFork(0);
+            updateLeftForkExecutorService.submit(() -> {
+                try {
+                    updateLeftFork(0);
+                } catch (Exception e) {
+                    log.error("Error when updating left fork", e);
+                }
+            });
         } catch (Exception e) {
-            log.error("Error when updating left fork", e);
+            log.error("Error when submit updating left fork", e);
         }
     }
 
