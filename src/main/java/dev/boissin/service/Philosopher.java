@@ -1,12 +1,11 @@
 package dev.boissin.service;
 
+import java.lang.reflect.Constructor;
 import java.nio.charset.StandardCharsets;
 import java.util.Comparator;
 import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
@@ -25,6 +24,9 @@ import org.apache.zookeeper.CreateMode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import dev.boissin.model.Event;
+import dev.boissin.model.Event.EatEvent;
+import dev.boissin.queue.DiningPhilosophersQueue;
 import dev.boissin.util.WorkerContext;
 import io.micrometer.core.instrument.Timer;
 
@@ -55,10 +57,13 @@ public class Philosopher implements Runnable {
     private CountDownLatch latch = new CountDownLatch(1);
     private AtomicLong leftForkId = new AtomicLong(-1L);
 
-    public Philosopher(long id, SharedCount sharedCount) throws Exception {
+    private final DiningPhilosophersQueue queue;
+
+    public Philosopher(long id, SharedCount sharedCount, DiningPhilosophersQueue queue) throws Exception {
         this.rnd = new Random();
         this.id = id;
         this.sharedCount = sharedCount;
+        this.queue = queue;
         final WorkerContext context = WorkerContext.getContext();
 
         thinkTimer = Timer.builder("philosophers.state.duration")
@@ -99,7 +104,7 @@ public class Philosopher implements Runnable {
     }
 
     private Lease takeForks() throws Exception {
-        final long start = System.nanoTime();
+        final long start = System.currentTimeMillis();
         log.debug("before acquire semaphore {}", this.id);
         final Lease lease = this.semaphore.acquire();
         log.debug("before acquire right mutex {}", this.id);
@@ -111,7 +116,7 @@ public class Philosopher implements Runnable {
     }
 
     private void releaseForks(Lease lease) throws Exception {
-        final long start = System.nanoTime();
+        final long start = System.currentTimeMillis();
         rightFork.release();
         leftFork.release();
         lease.close();
@@ -119,7 +124,7 @@ public class Philosopher implements Runnable {
     }
 
     private void think() throws InterruptedException {
-        final long start = System.nanoTime();
+        final long start = System.currentTimeMillis();
         Thread.sleep(rnd.nextLong(MIN_RANDOM_TIME_MS, MAX_RANDOM_TIME_MS));
         log.debug("before acquire latch {}", this.id);
         latch.await();
@@ -127,9 +132,9 @@ public class Philosopher implements Runnable {
     }
 
     private void eat() throws InterruptedException {
-        final long start = System.nanoTime();
+        final long start = System.currentTimeMillis();
         Thread.sleep(rnd.nextLong(MIN_RANDOM_TIME_MS, MAX_RANDOM_TIME_MS));
-        recordDuration(start, "Philosher {} is eating {}ms.", eatTimer);
+        recordDuration(start, "Philosher {} is eating {}ms.", eatTimer, EatEvent.class);
     }
 
     @Override
@@ -225,9 +230,24 @@ public class Philosopher implements Runnable {
     }
 
     private void recordDuration(final long start, String logMessage, Timer timer) {
-        final long duration = (System.nanoTime() - start) / 1_000_000L;
+        recordDuration(start, logMessage, timer, null);
+    }
+
+    private void recordDuration(final long start, String logMessage, Timer timer, Class<? extends Event> eventType) {
+        final long end = System.currentTimeMillis();
+        final long duration = (end - start);
         log.info(logMessage, id, duration);
         timer.record(duration, TimeUnit.MILLISECONDS);
+        if (eventType != null) {
+            try {
+                final Constructor<? extends Event> constructor = eventType.getDeclaredConstructor(
+                long.class, long.class, long.class, long.class, long.class);
+                final Event event = constructor.newInstance(start, end, id, id, leftForkId.get());
+                queue.sendEvent(event);
+            } catch (Exception e) {
+                log.error("Error generating event", e);
+            }
+        }
     }
 
     private void setLeasesCounter(int value) throws Exception {

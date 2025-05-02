@@ -5,10 +5,11 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
+import java.io.Serializable;
 
 import org.apache.curator.framework.recipes.queue.QueueSerializer;
 
-public class RecordSerializer<T extends Record> implements QueueSerializer<T> {
+public class RecordSerializer<T extends Serializable> implements QueueSerializer<T> {
 
     @Override
     public byte[] serialize(T record) {
