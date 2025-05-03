@@ -6,8 +6,11 @@ import java.util.Comparator;
 import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
 import org.apache.curator.framework.CuratorFramework;
@@ -36,9 +39,8 @@ public class Philosopher implements Runnable {
 
     private static final int MAX_RANDOM_TIME_MS = 800;
     private static final int MIN_RANDOM_TIME_MS = 200;
-    private static final int RETRY_UPDATE_FORK_LIMIT = 300;
+    private static final int RETRY_UPDATE_FORK_LIMIT = 30;
     private static final long UPDATE_FORK_ACQUIRE_TIMEOUT_MS = 100L;
-    private static final int UPDATE_FORK_LISTENER_THREAD_NB = 2;
 
     private final Random rnd;
     private final long id;
@@ -55,8 +57,9 @@ public class Philosopher implements Runnable {
     private InterProcessMutex leftFork;
     private CuratorCache forkPathCache;
     private CountDownLatch latch = new CountDownLatch(1);
+    private ReentrantLock updateLeftForkMutex = new ReentrantLock();
     private AtomicLong leftForkId = new AtomicLong(-1L);
-
+    private ExecutorService updateForkExecutorService;
     private final DiningPhilosophersQueue queue;
 
     public Philosopher(long id, SharedCount sharedCount, DiningPhilosophersQueue queue) throws Exception {
@@ -94,6 +97,7 @@ public class Philosopher implements Runnable {
                         ("Philosopher " + id + " right fork").getBytes(StandardCharsets.UTF_8));
         this.rightFork = new InterProcessMutex(client, PhilosopherManager.FORKS_PATH_MUTEX + id);
 
+        this.updateForkExecutorService = Executors.newSingleThreadExecutor();
         this.forkPathCache = CuratorCache.build(client, PhilosopherManager.FORKS_PATH);
         final CuratorCacheListener listener = CuratorCacheListener.builder()
             .forCreates(this::handleForkPathChange)
@@ -109,6 +113,8 @@ public class Philosopher implements Runnable {
         final Lease lease = this.semaphore.acquire();
         log.debug("before acquire right mutex {}", this.id);
         rightFork.acquire();
+        log.debug("before acquire update left mutex : {} - {}", this.leftForkId.get(), this.id);
+        updateLeftForkMutex.lock();
         log.debug("before acquire left mutex : {} - {}", this.leftForkId.get(), this.id);
         leftFork.acquire();
         recordDuration(start, "Philosher {} is waiting {}ms to take forks.", takeForkTimer);
@@ -119,6 +125,7 @@ public class Philosopher implements Runnable {
         final long start = System.currentTimeMillis();
         rightFork.release();
         leftFork.release();
+        updateLeftForkMutex.unlock();
         lease.close();
         recordDuration(start, "Philosher {} is waiting {}ms to release forks.", releaseTimer);
     }
@@ -186,20 +193,17 @@ public class Philosopher implements Runnable {
 
         log.debug("Philosopher {} previous fork {}", id, previousId);
 
-        final InterProcessMutex tmpLeftFork = leftFork;
-        if (tmpLeftFork != null) {
-            if (!tmpLeftFork.acquire(UPDATE_FORK_ACQUIRE_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
-                log.warn("Philosopher {} can't acquire lock for update left fork {} by {}.",
+        if (!updateLeftForkMutex.tryLock(UPDATE_FORK_ACQUIRE_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
+            log.warn("Philosopher {} can't acquire lock for update left fork {} by {}.",
+                    id, leftForkId.get(), previousId);
+            if (retry < RETRY_UPDATE_FORK_LIMIT) {
+                log.warn("Philosopher {} retry update fork : {}", id, (retry + 1));
+                updateLeftFork(retry + 1);
+            } else {
+                log.error("Philosopher {} can't update left fork {} by {}.",
                         id, leftForkId.get(), previousId);
-                if (retry < RETRY_UPDATE_FORK_LIMIT) {
-                    log.warn("Philosopher {} retry update fork : {}", id, (retry + 1));
-                    updateLeftFork(retry + 1);
-                } else {
-                    log.error("Philosopher {} can't update left fork {} by {}.",
-                            id, leftForkId.get(), previousId);
-                }
-                return;
             }
+            return;
         }
         if (previousId > 0 && previousId != this.id) {
             log.info("Philosopher {} select left fork {}.", id, previousId);
@@ -213,17 +217,21 @@ public class Philosopher implements Runnable {
             this.latch = new CountDownLatch(1);
             this.leftFork = null;
         }
-        if (tmpLeftFork != null) {
-            tmpLeftFork.release();
-        }
+        updateLeftForkMutex.unlock();
 
         // update semaphore leases counter at half number of fork
-        setLeasesCounter(forksIds.size() / 2);
+        setLeasesCounter(forksIds.size() -1);
     }
 
     private void handleForkPathChange(ChildData childdata) {
         try {
-            updateLeftFork(0);
+            updateForkExecutorService.submit(() -> {
+                try {
+                    updateLeftFork(0);
+                } catch (Exception e) {
+                    log.error("Error when updating left fork", e);
+                }
+            });
         } catch (Exception e) {
             log.error("Error when submit updating left fork", e);
         }
