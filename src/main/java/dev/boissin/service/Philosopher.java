@@ -269,7 +269,10 @@ public class Philosopher implements Runnable {
         running.set(false);
         if (client != null && CuratorFrameworkState.STARTED == client.getState()) {
             try {
-                client.delete().guaranteed().forPath(PhilosopherManager.FORKS_PATH + "/" + id);
+                final String path = PhilosopherManager.FORKS_PATH + "/" + id;
+                if (client.checkExists().forPath(path) != null) {
+                    client.delete().guaranteed().forPath(path);
+                }
                 if (forkPathCache != null) {
                     forkPathCache.close();
                 }

@@ -116,13 +116,13 @@ public class PhilosopherManager implements SharedCountListener, QueueConsumer<Ev
     public void takeLeadership(CuratorFramework client) throws Exception {
         log.info("Instance {} take leadership.", id);
         try {
+            closePhilosophers();
             stateEventsChecker = new StateEventsChecker();
-            stateEventsChecker.start();
+            Thread.startVirtualThread(stateEventsChecker);
             if (queue != null) {
                 queue.close();
             }
             queue = new DiningPhilosophersQueue(client, PhilosopherManager.this);
-            closePhilosophers();
             electionDoneLatch.countDown();
             stopLeaderLatch.await();
         } finally {

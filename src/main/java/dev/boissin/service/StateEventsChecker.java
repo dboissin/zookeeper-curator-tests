@@ -15,7 +15,7 @@ import org.slf4j.LoggerFactory;
 import dev.boissin.model.Event;
 import dev.boissin.model.Event.EatEvent;
 
-public class StateEventsChecker extends Thread {
+public class StateEventsChecker implements Runnable {
 
     private static final Logger log = LoggerFactory.getLogger(StateEventsChecker.class);
     private static final long LAG_TIME = 10_000L;
@@ -51,6 +51,7 @@ public class StateEventsChecker extends Thread {
                     forksEndTime.compute(((EatEvent)event).rightForkId(), chekAndUpdateFork((EatEvent) event));
                     forksEndTime.compute(((EatEvent)event).leftForkId(), chekAndUpdateFork((EatEvent) event));
                 }
+                countProcessedEvents++;
             } else {
                 try {
                     log.debug("Wait {}ms before check Events", waitingTime);
@@ -60,7 +61,7 @@ public class StateEventsChecker extends Thread {
                     log.error("Thread interrupted", e);
                 }
             }
-            countProcessedEvents++;
+
             if ((lastCountLog + 60_000L) < now) {
                 log.info("StateEventsChecker has verifed {} events.", countProcessedEvents);
                 lastCountLog = now;
