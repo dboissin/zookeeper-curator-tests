@@ -38,7 +38,7 @@ public class PhilosopherManager implements SharedCountListener, QueueConsumer<Ev
     private final CountDownLatch stopLeaderLatch = new CountDownLatch(1);
     private final CountDownLatch electionDoneLatch = new CountDownLatch(1);
     private final LeaderSelector leaderSelector;
-
+    private StateEventsChecker stateEventsChecker;
     private final int workerThreadNb;
 
     public PhilosopherManager(int workerThreadNb) throws Exception {
@@ -47,6 +47,7 @@ public class PhilosopherManager implements SharedCountListener, QueueConsumer<Ev
         this.client = WorkerContext.getContext().getClient();
 
         this.leaderSelector = new LeaderSelector(client, LEADER_ELECTION_PATH, this);
+        this.leaderSelector.setId("" + this.id);
         this.leaderSelector.start();
 
         this.sharedCount = new SharedCount(client, LEASE_COUNT_PATH, 0);
@@ -59,7 +60,6 @@ public class PhilosopherManager implements SharedCountListener, QueueConsumer<Ev
         if (leaderSelector.hasLeadership()) {
             return; // don't instanciate philosphers on leader instance
         }
-
         queue = new DiningPhilosophersQueue(client, null);
 
         localPhilosophers = new Philosopher[workerThreadNb];
@@ -74,7 +74,7 @@ public class PhilosopherManager implements SharedCountListener, QueueConsumer<Ev
     public void stateChanged(CuratorFramework client, ConnectionState newState) {
         if (!newState.isConnected()) {
             stopLeaderLatch.countDown();
-            log.warn("Lost connection");
+            log.warn("Service {} lost curator connection", id);
         }
     }
 
@@ -83,27 +83,51 @@ public class PhilosopherManager implements SharedCountListener, QueueConsumer<Ev
         log.info("SharedCount value change : {}", newCount);
     }
 
+    private void closePhilosophers() {
+        if (localPhilosophers != null) {
+            for (Philosopher p: localPhilosophers) {
+                p.close();
+            }
+         }
+    }
+
     public void close() throws IOException {
+        closePhilosophers();
         if (sharedCount != null) {
             sharedCount.close();
+        }
+        if (queue != null) {
+            queue.close();
+        }
+        if (leaderSelector != null) {
+            leaderSelector.close();
+        }
+        if (stateEventsChecker != null) {
+            stateEventsChecker.close();
         }
     }
 
     @Override
     public void consumeMessage(Event message) throws Exception {
-        log.info(message.toString());
+        stateEventsChecker.addEvent(message);
     }
 
     @Override
     public void takeLeadership(CuratorFramework client) throws Exception {
         log.info("Instance {} take leadership.", id);
         try {
+            stateEventsChecker = new StateEventsChecker();
+            stateEventsChecker.start();
+            if (queue != null) {
+                queue.close();
+            }
             queue = new DiningPhilosophersQueue(client, PhilosopherManager.this);
+            closePhilosophers();
             electionDoneLatch.countDown();
             stopLeaderLatch.await();
         } finally {
-            log.info("Lost leadership");
-            queue.close();
+            log.info("Service {} lost leadership", id);
+            close(); // TODO add reconnect
         }
     }
 }

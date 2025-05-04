@@ -9,6 +9,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
@@ -61,6 +62,7 @@ public class Philosopher implements Runnable {
     private AtomicLong leftForkId = new AtomicLong(-1L);
     private ExecutorService updateForkExecutorService;
     private final DiningPhilosophersQueue queue;
+    private AtomicBoolean running = new AtomicBoolean(true);
 
     public Philosopher(long id, SharedCount sharedCount, DiningPhilosophersQueue queue) throws Exception {
         this.rnd = new Random();
@@ -148,7 +150,7 @@ public class Philosopher implements Runnable {
     public void run() {
         log.info("Run thread philopher {}", this.id);
         try {
-            while (true) {
+            while (running.get() && !Thread.currentThread().isInterrupted()) {
                 think();
                 final Lease lease = takeForks();
                 eat();
@@ -156,13 +158,8 @@ public class Philosopher implements Runnable {
             }
         } catch (Exception e) {
             log.error("Philosopher error", e);
-            if (client != null && CuratorFrameworkState.STARTED == client.getState()) {
-                try {
-                    client.delete().guaranteed().forPath(PhilosopherManager.FORKS_PATH + "/" + id);
-                } catch (Exception e1) {
-                    log.error("Error deleting fork of stopped philosopher", e1);
-                }
-            }
+        } finally {
+            close();
         }
     }
 
@@ -172,7 +169,7 @@ public class Philosopher implements Runnable {
         .filter(forkNode -> forkNode.getPath().length() > PhilosopherManager.FORKS_PATH.length() + 1)
         .map(forkNode -> forkNode.getPath().substring(PhilosopherManager.FORKS_PATH.length() + 1))
         .filter(forkSubPath -> !forkSubPath.contains("/"))
-        .map(forkSubPath -> Long.decode(forkSubPath))
+        .map(Long::decode)
         .collect(Collectors.toSet());
 
         log.debug("Philosopher {} list forks {}", id, forksIds);
@@ -212,15 +209,13 @@ public class Philosopher implements Runnable {
             if (this.latch.getCount() > 0) {
                 this.latch.countDown();
             }
+            // update semaphore leases counter at half number of fork
+            setLeasesCounter(forksIds.size() -1);
         } else if (this.leftFork != null) {
-            log.info("Philosopher {} remove left fork {}.", id, this.leftFork);
-            this.latch = new CountDownLatch(1);
-            this.leftFork = null;
+            log.error("Philosopher {} no longer has a left fork {}. So, it will be stopped.", id, this.leftFork);
+            running.set(false);
         }
         updateLeftForkMutex.unlock();
-
-        // update semaphore leases counter at half number of fork
-        setLeasesCounter(forksIds.size() -1);
     }
 
     private void handleForkPathChange(ChildData childdata) {
@@ -266,6 +261,23 @@ public class Philosopher implements Runnable {
             updated = sharedCount.trySetCount(vv, value);
             if (updated) {
                 log.info("Semaphore shared counter : {}", sharedCount.getCount());
+            }
+        }
+    }
+
+    public void close() {
+        running.set(false);
+        if (client != null && CuratorFrameworkState.STARTED == client.getState()) {
+            try {
+                client.delete().guaranteed().forPath(PhilosopherManager.FORKS_PATH + "/" + id);
+                if (forkPathCache != null) {
+                    forkPathCache.close();
+                }
+                if (updateForkExecutorService != null) {
+                    updateForkExecutorService.close();
+                }
+            } catch (Exception e1) {
+                log.error("Error deleting fork of stopped philosopher", e1);
             }
         }
     }
