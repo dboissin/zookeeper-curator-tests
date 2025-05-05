@@ -269,12 +269,12 @@ public class Philosopher implements Runnable {
         running.set(false);
         if (client != null && CuratorFrameworkState.STARTED == client.getState()) {
             try {
+                if (forkPathCache != null) {
+                    forkPathCache.close();
+                }
                 final String path = PhilosopherManager.FORKS_PATH + "/" + id;
                 if (client.checkExists().forPath(path) != null) {
                     client.delete().guaranteed().forPath(path);
-                }
-                if (forkPathCache != null) {
-                    forkPathCache.close();
                 }
                 if (updateForkExecutorService != null) {
                     updateForkExecutorService.close();
