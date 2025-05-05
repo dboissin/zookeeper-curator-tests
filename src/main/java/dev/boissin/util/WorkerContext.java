@@ -2,6 +2,7 @@ package dev.boissin.util;
 
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -11,6 +12,8 @@ import org.apache.curator.framework.CuratorFrameworkFactory;
 import org.apache.curator.framework.recipes.atomic.DistributedAtomicLong;
 import org.apache.curator.retry.ExponentialBackoffRetry;
 import org.apache.curator.retry.RetryNTimes;
+import org.apache.zookeeper.CreateMode;
+import org.apache.zookeeper.KeeperException.NodeExistsException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -24,6 +27,7 @@ public class WorkerContext {
     private static final String WORKER_COUNTER_PATH = "/counters/workers";
     private static final String DEFAULT_NAMESPACE = "test-zk-project";
     private static final String NAMESPACE_ENV = "NAMESPACE";
+    private static final String SERVICE_NAME = "dining-philosophers";
 
     private final PrometheusMeterRegistry prometheusRegistry;
 
@@ -54,6 +58,10 @@ public class WorkerContext {
 
     public String getNamespace() {
         return Optional.ofNullable(System.getenv(NAMESPACE_ENV)).orElse(DEFAULT_NAMESPACE);
+    }
+
+    public String getServiceName() {
+        return SERVICE_NAME;
     }
 
     public long getWorkerId() {
@@ -87,6 +95,38 @@ public class WorkerContext {
         return """
                 { "id":"%s", "ip":"%s"}
                 """.formatted(getWorkerId(), getHostIp());
+    }
+
+    public String getServiceUrl() {
+        return "http://%s:8080".formatted(getHostIp());
+    }
+
+    public void traefikRegisterService(String router, String pathPrefix) throws Exception {
+        final String path = "/http/services/%s/loadbalancer/servers/%s/url"
+                .formatted(getServiceName(), getWorkerId());
+        client.create().creatingParentsIfNeeded().withMode(CreateMode.EPHEMERAL)
+                .forPath(path, getServiceUrl().getBytes(StandardCharsets.UTF_8));
+        try {
+            client.create().creatingParentsIfNeeded().forPath(
+                "/http/services/%s/loadbalancer/healthcheck/path".formatted(getServiceName()),
+                "/health/readiness".getBytes(StandardCharsets.UTF_8));
+        } catch (NodeExistsException e) {
+            log.debug("Health check path already created", e);
+        }
+        try {
+            client.create().creatingParentsIfNeeded().forPath(
+                "/http/routers/%s/rule".formatted(router),
+                "PathPrefix(`%s`)".formatted(pathPrefix).getBytes(StandardCharsets.UTF_8));
+        } catch (NodeExistsException e) {
+            log.debug("Router path already created", e);
+        }
+        try {
+            client.create().creatingParentsIfNeeded().forPath(
+                "/http/routers/%s/service".formatted(router),
+                getServiceName().getBytes(StandardCharsets.UTF_8));
+        } catch (NodeExistsException e) {
+            log.debug("Service path already created", e);
+        }
     }
 
     public CuratorFramework getClient() {

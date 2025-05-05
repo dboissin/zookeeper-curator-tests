@@ -9,6 +9,7 @@ import org.slf4j.LoggerFactory;
 
 import dev.boissin.controller.EventsHandler;
 import dev.boissin.controller.MetricsHandler;
+import dev.boissin.controller.ReadinessHandler;
 import dev.boissin.controller.SimpleHttpServer;
 import dev.boissin.controller.ViewHandler;
 import dev.boissin.service.PhilosopherManager;
@@ -37,7 +38,15 @@ public class App {
                     (PrometheusMeterRegistry) context.getMeterRegistry()));
             simpleHttpServer.addRoute("/events", new EventsHandler(dinner));
             simpleHttpServer.addRoute("/", new ViewHandler());
+            simpleHttpServer.addRoute("/health/readiness", new ReadinessHandler());
             simpleHttpServer.start();
+
+
+            final String router = Optional.ofNullable(System.getenv("LB_ROUTER"))
+                    .orElse("default-router");
+            final String pathPrefix = Optional.ofNullable(System.getenv("LB_PATH_PREFIX"))
+                    .orElse("/" + context.getServiceName());
+            context.traefikRegisterService(router, pathPrefix);
 
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
                 try {
