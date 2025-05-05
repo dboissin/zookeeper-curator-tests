@@ -1,5 +1,7 @@
 package dev.boissin.util;
 
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -70,6 +72,21 @@ public class WorkerContext {
             }
             return id;
         });
+    }
+
+    public String getHostIp() {
+        try {
+            return InetAddress.getLocalHost().getHostAddress();
+        } catch (UnknownHostException e) {
+            log.error("Error getting host ip", e);
+            return "";
+        }
+    }
+
+    public String getIdAndHost() {
+        return """
+                { "id":"%s", "ip":"%s"}
+                """.formatted(getWorkerId(), getHostIp());
     }
 
     public CuratorFramework getClient() {

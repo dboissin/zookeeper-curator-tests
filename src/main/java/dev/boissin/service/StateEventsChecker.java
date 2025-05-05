@@ -5,6 +5,7 @@ import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiFunction;
@@ -12,7 +13,9 @@ import java.util.function.BiFunction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import dev.boissin.exception.IllegalConcurrentForkUsageException;
 import dev.boissin.model.Event;
+import dev.boissin.model.StateEventCheckerResult;
 import dev.boissin.model.Event.EatEvent;
 
 public class StateEventsChecker implements Runnable {
@@ -21,10 +24,12 @@ public class StateEventsChecker implements Runnable {
     private static final long LAG_TIME = 10_000L;
 
     private final ConcurrentSkipListMap<Long, List<Event>> events = new ConcurrentSkipListMap<>();
+    private final ConcurrentLinkedDeque<Event> verifiedEvents = new ConcurrentLinkedDeque<>();
+    private final ConcurrentLinkedDeque<Event> errorEvents = new ConcurrentLinkedDeque<>();
     private AtomicBoolean running = new AtomicBoolean(true);
 
     public void addEvent(Event event) {
-        final Long startTime = ((EatEvent)event).startTime();
+        final Long startTime = event.startTime();
         // Put list before compute because compute method isn't atomic.
         events.putIfAbsent(startTime, new LinkedList<>());
         events.compute(startTime, (key, value) -> {
@@ -46,10 +51,15 @@ public class StateEventsChecker implements Runnable {
             final long waitingTime =  ((events.isEmpty() ? now : events.firstKey()) + LAG_TIME) - now;
             if (waitingTime <= 0) {
                 Map.Entry<Long, List<Event>> entry = events.pollFirstEntry();
-                entry.getValue().sort(Comparator.comparing(e -> ((EatEvent) e).endTime()));
+                entry.getValue().sort(Comparator.comparing(Event::endTime));
                 for (Event event: entry.getValue()) {
-                    forksEndTime.compute(((EatEvent)event).rightForkId(), chekAndUpdateFork((EatEvent) event));
-                    forksEndTime.compute(((EatEvent)event).leftForkId(), chekAndUpdateFork((EatEvent) event));
+                    try {
+                        forksEndTime.compute(((EatEvent)event).rightForkId(), chekAndUpdateFork((EatEvent) event));
+                        forksEndTime.compute(((EatEvent)event).leftForkId(), chekAndUpdateFork((EatEvent) event));
+                        verifiedEvents.add(event);
+                    } catch (IllegalConcurrentForkUsageException e) {
+                        errorEvents.add(event);
+                    }
                 }
                 countProcessedEvents++;
             } else {
@@ -77,9 +87,17 @@ public class StateEventsChecker implements Runnable {
             }
             if (forkId != null && expireTime != null && event.startTime() < expireTime) {
                 log.error("Concurrent use of fork {} is not possible.", forkId);
+                throw new IllegalConcurrentForkUsageException();
             }
             return event.endTime();
         };
+    }
+
+    public StateEventCheckerResult getResult() {
+        final StateEventCheckerResult result = new StateEventCheckerResult();
+        result.setErrorEvents(errorEvents.stream().toList());
+        result.setVerifiedEvents(verifiedEvents.stream().toList());
+        return result;
     }
 
     public void close() {

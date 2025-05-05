@@ -7,7 +7,9 @@ import java.util.concurrent.CountDownLatch;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import dev.boissin.controller.EventsController;
 import dev.boissin.controller.MetricsController;
+import dev.boissin.controller.SimpleHttpServer;
 import dev.boissin.service.PhilosopherManager;
 import dev.boissin.util.WorkerContext;
 import io.micrometer.prometheusmetrics.PrometheusMeterRegistry;
@@ -29,7 +31,11 @@ public class App {
                     .ofNullable(System.getenv("PHILOSOPHERS_NB")).orElse("3")));
             dinner.launch();
 
-            final MetricsController metricsController = new MetricsController((PrometheusMeterRegistry) context.getMeterRegistry());
+            final SimpleHttpServer simpleHttpServer = new SimpleHttpServer();
+            simpleHttpServer.addRoute("/health/metrics", new MetricsController(
+                    (PrometheusMeterRegistry) context.getMeterRegistry()));
+            simpleHttpServer.addRoute("/events", new EventsController(dinner));
+            simpleHttpServer.start();
 
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
                 try {
@@ -37,8 +43,8 @@ public class App {
                     if (dinner != null) {
                         dinner.close();
                     }
-                    if (metricsController != null) {
-                        metricsController.close();
+                    if (simpleHttpServer != null) {
+                        simpleHttpServer.close();
                     }
                     WorkerContext.getContext().close();
                     LATCH.countDown();

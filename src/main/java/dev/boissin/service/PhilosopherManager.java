@@ -47,7 +47,7 @@ public class PhilosopherManager implements SharedCountListener, QueueConsumer<Ev
         this.client = WorkerContext.getContext().getClient();
 
         this.leaderSelector = new LeaderSelector(client, LEADER_ELECTION_PATH, this);
-        this.leaderSelector.setId("" + this.id);
+        this.leaderSelector.setId(WorkerContext.getContext().getIdAndHost());
         this.leaderSelector.start();
 
         this.sharedCount = new SharedCount(client, LEASE_COUNT_PATH, 0);
@@ -130,4 +130,13 @@ public class PhilosopherManager implements SharedCountListener, QueueConsumer<Ev
             close(); // TODO add reconnect
         }
     }
+
+    public LeaderSelector getLeaderSelector() {
+        return leaderSelector;
+    }
+
+    public StateEventsChecker getStateEventsChecker() {
+        return stateEventsChecker;
+    }
+
 }
