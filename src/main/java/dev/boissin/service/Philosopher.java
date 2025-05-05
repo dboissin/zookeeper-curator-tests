@@ -30,6 +30,7 @@ import org.slf4j.LoggerFactory;
 
 import dev.boissin.model.Event;
 import dev.boissin.model.Event.EatEvent;
+import dev.boissin.model.Event.ThinkEvent;
 import dev.boissin.queue.DiningPhilosophersQueue;
 import dev.boissin.util.WorkerContext;
 import io.micrometer.core.instrument.Timer;
@@ -137,7 +138,7 @@ public class Philosopher implements Runnable {
         Thread.sleep(rnd.nextLong(MIN_RANDOM_TIME_MS, MAX_RANDOM_TIME_MS));
         log.debug("before acquire latch {}", this.id);
         latch.await();
-        recordDuration(start, "Philosher {} is thinking {}ms.", thinkTimer);
+        recordDuration(start, "Philosher {} is thinking {}ms.", thinkTimer, ThinkEvent.class);
     }
 
     private void eat() throws InterruptedException {

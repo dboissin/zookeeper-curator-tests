@@ -22,6 +22,7 @@ public class StateEventsChecker implements Runnable {
 
     private static final Logger log = LoggerFactory.getLogger(StateEventsChecker.class);
     private static final long LAG_TIME = 10_000L;
+    private static final long EVENTS_RETENTION = 45_000L;
 
     private final ConcurrentSkipListMap<Long, List<Event>> events = new ConcurrentSkipListMap<>();
     private final ConcurrentLinkedDeque<Event> verifiedEvents = new ConcurrentLinkedDeque<>();
@@ -29,13 +30,17 @@ public class StateEventsChecker implements Runnable {
     private AtomicBoolean running = new AtomicBoolean(true);
 
     public void addEvent(Event event) {
-        final Long startTime = event.startTime();
-        // Put list before compute because compute method isn't atomic.
-        events.putIfAbsent(startTime, new LinkedList<>());
-        events.compute(startTime, (key, value) -> {
-            value.add(event);
-            return value;
-        });
+        if (event instanceof EatEvent) {
+            final Long startTime = event.startTime();
+            // Put list before compute because compute method isn't atomic.
+            events.putIfAbsent(startTime, new LinkedList<>());
+            events.compute(startTime, (key, value) -> {
+                value.add(event);
+                return value;
+            });
+        } else {
+            verifiedEvents.add(event);
+        }
     }
 
     @Override
@@ -75,6 +80,7 @@ public class StateEventsChecker implements Runnable {
             if ((lastCountLog + 60_000L) < now) {
                 log.info("StateEventsChecker has verifed {} events.", countProcessedEvents);
                 lastCountLog = now;
+                verifiedEvents.removeIf(event -> event.startTime() < (now - EVENTS_RETENTION));
             }
         }
     }
@@ -95,8 +101,9 @@ public class StateEventsChecker implements Runnable {
 
     public StateEventCheckerResult getResult() {
         final StateEventCheckerResult result = new StateEventCheckerResult();
+        final long delay = System.currentTimeMillis() - LAG_TIME;
         result.setErrorEvents(errorEvents.stream().toList());
-        result.setVerifiedEvents(verifiedEvents.stream().toList());
+        result.setVerifiedEvents(verifiedEvents.stream().filter(event -> event.startTime() < delay).toList());
         return result;
     }
 

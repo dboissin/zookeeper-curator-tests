@@ -41,4 +41,17 @@ public interface Event extends Serializable {
 
     }
 
+    public static record ThinkEvent(
+        long startTime,
+        long endTime,
+        long philopherId,
+        long rightForkId,
+        long leftForkId
+    ) implements Event {
+
+        @JsonbCreator
+        public ThinkEvent{}
+
+    }
+
 }

@@ -8,11 +8,11 @@ import com.sun.net.httpserver.HttpHandler;
 
 import io.micrometer.prometheusmetrics.PrometheusMeterRegistry;
 
-public class MetricsController implements HttpHandler {
+public class MetricsHandler implements HttpHandler {
 
     private final PrometheusMeterRegistry prometheusRegistry;
 
-    public MetricsController(PrometheusMeterRegistry prometheusMeterRegistry) {
+    public MetricsHandler(PrometheusMeterRegistry prometheusMeterRegistry) {
         this.prometheusRegistry = prometheusMeterRegistry;
     }
 

@@ -22,13 +22,13 @@ import jakarta.json.JsonReader;
 import jakarta.json.bind.Jsonb;
 import jakarta.json.bind.JsonbBuilder;
 
-public class EventsController implements HttpHandler {
+public class EventsHandler implements HttpHandler {
 
-    private static final Logger log = LoggerFactory.getLogger(EventsController.class);
+    private static final Logger log = LoggerFactory.getLogger(EventsHandler.class);
 
     private final PhilosopherManager philosopherManager;
 
-    public EventsController(PhilosopherManager philosopherManager) {
+    public EventsHandler(PhilosopherManager philosopherManager) {
         this.philosopherManager = philosopherManager;
     }
 

@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Philosophers Timeline</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        .chart-container {
+            width: 100%;
+            max-width: 1200px;
+            margin: 0 auto;
+            height: 500px;
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+        }
+        .loading {
+            text-align: center;
+            padding: 20px;
+            font-size: 18px;
+        }
+        .error {
+            color: red;
+            text-align: center;
+            padding: 20px;
+            font-size: 18px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Dining philosophers activity timeline</h1>
+    <div id="loading" class="loading">Loading data...</div>
+    <div id="error" class="error" style="display: none;"></div>
+    <div class="chart-container">
+        <canvas id="timelineChart"></canvas>
+    </div>
+
+    <script>
+        // Define color palette for different states
+        const stateColors = {
+            'Eat': 'rgba(75, 192, 192, 0.7)',
+            'Think': 'rgba(54, 162, 235, 0.7)',
+            'Wait': 'rgba(255, 99, 132, 0.7)'
+        };
+
+        // Process data for Chart.js
+        function processData(data) {
+            const philosophers = [...new Set(data.map(item => item.philosopher))];
+            const datasets = [];
+
+            // Find min and max times for scaling
+            const allTimes = data.flatMap(item => [item['start-time'], item['end-time']]);
+            const minTime = Math.min(...allTimes);
+            const maxTime = Math.max(...allTimes);
+
+            philosophers.forEach(philosopher => {
+                const philosopherData = data.filter(item => item.philosopher === philosopher);
+
+                // Group by state first
+                const states = [...new Set(philosopherData.map(item => item.state))];
+
+                states.forEach(state => {
+                    const stateData = philosopherData.filter(item => item.state === state);
+
+                    datasets.push({
+                        label: `${philosopher} - ${state}`,
+                        data: stateData.map(activity => ({
+                            x: [new Date(activity['start-time']), new Date(activity['end-time'])],
+                            y: philosopher
+                        })),
+                        backgroundColor: stateColors[state] || 'rgba(201, 203, 207, 0.7)',
+                        borderColor: stateColors[state] || 'rgba(201, 203, 207, 1)',
+                        borderWidth: 1,
+                        borderRadius: 5,
+                        duration: stateData.map(activity => activity['end-time'] - activity['start-time'])
+                    });
+                });
+            });
+
+            return { datasets, minTime, maxTime };
+        }
+
+        // Create the chart
+        function createChart(data) {
+            document.getElementById('loading').style.display = 'none';
+
+            try {
+                const ctx = document.getElementById('timelineChart').getContext('2d');
+                const { datasets, minTime, maxTime } = processData(data);
+
+                new Chart(ctx, {
+                    type: 'bar',
+                    data: { datasets },
+                    options: {
+                        indexAxis: 'y',
+                        barPercentage: 0.9,
+                        categoryPercentage: 0.9,
+                        scales: {
+                            x: {
+                                type: 'time',
+                                min: new Date(minTime),
+                                max: new Date(maxTime),
+                                time: {
+                                    unit: 'millisecond',
+                                    displayFormats: {
+                                        millisecond: 'HH:mm:ss.SSS',
+                                        second: 'HH:mm:ss',
+                                        minute: 'HH:mm',
+                                        hour: 'HH:mm'
+                                    },
+                                    tooltipFormat: 'HH:mm:ss.SSS'
+                                },
+                                title: {
+                                    display: true,
+                                    text: 'Time'
+                                },
+                                ticks: {
+                                    autoSkip: true,
+                                    autoSkipPadding: 50,
+                                    maxRotation: 0
+                                }
+                            },
+                            y: {
+                                title: {
+                                    display: true,
+                                    text: 'Philosopher'
+                                },
+                                barThickness: 100,
+                                grid: {
+                                    color: 'rgba(200, 200, 200, 0.2)',
+                                    lineWidth: 1
+                                },
+                                ticks: {
+                                    mirror: false,
+                                    padding: 0
+                                }
+                            }
+                        },
+                        plugins: {
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        const duration = context.dataset.duration[context.dataIndex];
+                                        const start = new Date(context.raw.x[0]);
+                                        const end = new Date(context.raw.x[1]);
+                                        return [
+                                            `Philosopher: ${context.raw.y}`,
+                                            `State: ${context.dataset.label.split(' - ')[1]}`,
+                                            `Start: ${start.toISOString()}`,
+                                            `End: ${end.toISOString()}`,
+                                            `Duration: ${duration}ms`
+                                        ];
+                                    }
+                                }
+                            },
+                            legend: {
+                                display: true,
+                                position: 'bottom',
+                                labels: {
+                                    generateLabels: function(chart) {
+                                        const uniqueStates = [...new Set(data.map(item => item.state))];
+                                        return uniqueStates.map(state => ({
+                                            text: state,
+                                            fillStyle: stateColors[state] || 'rgba(201, 203, 207, 0.7)',
+                                            strokeStyle: stateColors[state] || 'rgba(201, 203, 207, 1)',
+                                            hidden: false
+                                        }));
+                                    }
+                                }
+                            }
+                        },
+                        parsing: {
+                            xAxisKey: 'x',
+                            yAxisKey: 'y'
+                        }
+                    }
+                });
+            } catch (error) {
+                showError("Error creating chart: " + error.message);
+            }
+        }
+
+        function showError(message) {
+            document.getElementById('loading').style.display = 'none';
+            const errorDiv = document.getElementById('error');
+            errorDiv.style.display = 'block';
+            errorDiv.textContent = message;
+        }
+
+        // Fetch data from /events endpoint
+        function fetchData() {
+            fetch('/events')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    console.log(data.verifiedEvents);
+                    if (!Array.isArray(data.verifiedEvents)) {
+                        throw new Error("Invalid data format received");
+                    }
+                    createChart(data.verifiedEvents);
+                })
+                .catch(error => {
+                    showError("Failed to load data: " + error.message);
+                    console.error('Error fetching data:', error);
+                });
+        }
+
+        // Initialize the chart when the page loads
+        window.onload = fetchData;
+    </script>
+</body>
+</html>
