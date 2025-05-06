@@ -1,4 +1,14 @@
-package dev.boissin.util;
+/**
+ * Dining Philosophers - Zookeeper/Curator Case Study
+ * Copyright (C) 2025 Damien BOISSIN
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ */
+
+ package dev.boissin.util;
 
 import java.net.InetAddress;
 import java.net.UnknownHostException;
@@ -93,8 +103,7 @@ public class WorkerContext {
 
     public String getIdAndHost() {
         return """
-                { "id":"%s", "ip":"%s"}
-                """.formatted(getWorkerId(), getHostIp());
+                { "id":"%s", "ip":"%s"}""".formatted(getWorkerId(), getHostIp());
     }
 
     public String getServiceUrl() {
