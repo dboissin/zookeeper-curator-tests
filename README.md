@@ -46,7 +46,7 @@ docker-compose up -d --build
 ## 📈 Scaling
 
 ```bash
-docker-compose up -d --build
+docker-compose up -d --scale dining-philosophers=5
 ```
 
 ## ⚙️ Core Stack
