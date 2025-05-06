@@ -102,31 +102,34 @@ public class WorkerContext {
     }
 
     public void traefikRegisterService(String router, String pathPrefix) throws Exception {
-        final String path = "/http/services/%s/loadbalancer/servers/%s/url"
+        final String path = "/traefik/http/services/%s/loadbalancer/servers/%s/url"
                 .formatted(getServiceName(), getWorkerId());
         client.create().creatingParentsIfNeeded().withMode(CreateMode.EPHEMERAL)
                 .forPath(path, getServiceUrl().getBytes(StandardCharsets.UTF_8));
         try {
             client.create().creatingParentsIfNeeded().forPath(
-                "/http/services/%s/loadbalancer/healthcheck/path".formatted(getServiceName()),
+                "/traefik/http/services/%s/loadbalancer/healthcheck/path".formatted(getServiceName()),
                 "/health/readiness".getBytes(StandardCharsets.UTF_8));
         } catch (NodeExistsException e) {
             log.debug("Health check path already created", e);
         }
         try {
             client.create().creatingParentsIfNeeded().forPath(
-                "/http/routers/%s/rule".formatted(router),
+                "/traefik/http/routers/%s/rule".formatted(router),
                 "PathPrefix(`%s`)".formatted(pathPrefix).getBytes(StandardCharsets.UTF_8));
         } catch (NodeExistsException e) {
             log.debug("Router path already created", e);
         }
         try {
             client.create().creatingParentsIfNeeded().forPath(
-                "/http/routers/%s/service".formatted(router),
+                "/traefik/http/routers/%s/service".formatted(router),
                 getServiceName().getBytes(StandardCharsets.UTF_8));
         } catch (NodeExistsException e) {
             log.debug("Service path already created", e);
         }
+        client.create().creatingParentsIfNeeded().withMode(CreateMode.EPHEMERAL)
+                .forPath("/traefik/%s-%s-%d".formatted(router, getServiceName(), getWorkerId()),
+                getIdAndHost().getBytes(StandardCharsets.UTF_8));
     }
 
     public CuratorFramework getClient() {

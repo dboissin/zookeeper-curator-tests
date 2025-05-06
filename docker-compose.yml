@@ -7,7 +7,6 @@ services:
     environment:
       - ZOO_MY_ID=1
       - ZOO_SERVERS=server.1=zookeeper1:2888:3888;2181 server.2=zookeeper2:2888:3888;2181 server.3=zookeeper3:2888:3888;2181
-      - ZOO_4LW_COMMANDS_WHITELIST=srvr,stat,ruok
     volumes:
       - zookeeper1_data:/data
       - zookeeper1_logs:/logs
@@ -18,7 +17,6 @@ services:
     environment:
       - ZOO_MY_ID=2
       - ZOO_SERVERS=server.1=zookeeper1:2888:3888;2181 server.2=zookeeper2:2888:3888;2181 server.3=zookeeper3:2888:3888;2181
-      - ZOO_4LW_COMMANDS_WHITELIST=srvr,stat,ruok
     volumes:
       - zookeeper2_data:/data
       - zookeeper2_logs:/logs
@@ -29,7 +27,6 @@ services:
     environment:
       - ZOO_MY_ID=3
       - ZOO_SERVERS=server.1=zookeeper1:2888:3888;2181 server.2=zookeeper2:2888:3888;2181 server.3=zookeeper3:2888:3888;2181
-      - ZOO_4LW_COMMANDS_WHITELIST=srvr,stat,ruok
     volumes:
       - zookeeper3_data:/data
       - zookeeper3_logs:/logs
@@ -68,20 +65,18 @@ services:
       - prometheus
 
   traefik:
-    image: traefik:3.3.6
+    image: traefik:3.4
     command:
       - "--api.insecure=true"
       - "--api.dashboard=true"
       - "--providers.zookeeper=true"
       - "--providers.zookeeper.endpoints=zookeeper1:2181,zookeeper2:2181,zookeeper3:2181"
-      - "--providers.zookeeper.rootkey=test-zk-project"
+      - "--providers.zookeeper.rootkey=test-zk-project/traefik"
       - "--entrypoints.web.address=:9080"
       - "--log.level=DEBUG"
     ports:
       - "9080:9080"
       - "8080:8080"
-    volumes:
-      - "/var/run/docker.sock:/var/run/docker.sock:ro"
     depends_on:
       - zookeeper1
       - zookeeper2
