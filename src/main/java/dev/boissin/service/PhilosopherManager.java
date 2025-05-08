@@ -51,21 +51,21 @@ public class PhilosopherManager implements SharedCountListener, QueueConsumer<Ev
     private StateEventsChecker stateEventsChecker;
     private final int workerThreadNb;
 
-    public PhilosopherManager(int workerThreadNb) throws Exception {
+    public PhilosopherManager(int workerThreadNb) {
         this.workerThreadNb = workerThreadNb;
         this.id = WorkerContext.getContext().getWorkerId() * 1000;
         this.client = WorkerContext.getContext().getClient();
 
         this.leaderSelector = new LeaderSelector(client, LEADER_ELECTION_PATH, this);
         this.leaderSelector.setId(WorkerContext.getContext().getIdAndHost());
-        this.leaderSelector.start();
 
         this.sharedCount = new SharedCount(client, LEASE_COUNT_PATH, 0);
         this.sharedCount.addListener(this);
-        this.sharedCount.start();
     }
 
     public void launch() throws Exception {
+        leaderSelector.start();
+        sharedCount.start();
         electionDoneLatch.await(1, TimeUnit.SECONDS);
         if (leaderSelector.hasLeadership()) {
             return; // don't instanciate philosphers on leader instance
@@ -84,7 +84,18 @@ public class PhilosopherManager implements SharedCountListener, QueueConsumer<Ev
     public void stateChanged(CuratorFramework client, ConnectionState newState) {
         if (!newState.isConnected()) {
             stopLeaderLatch.countDown();
+            try {
+                close();
+            } catch (IOException e) {
+                log.error("Error when close philosophers on connection lost", e);
+            }
             log.warn("Service {} lost curator connection", id);
+        } else if (newState.isConnected()) {
+            try {
+                launch();
+            } catch (Exception e) {
+                log.error("Error when restart philosophers after curator client reconnect", e);
+            }
         }
     }
 
@@ -137,7 +148,7 @@ public class PhilosopherManager implements SharedCountListener, QueueConsumer<Ev
             stopLeaderLatch.await();
         } finally {
             log.info("Service {} lost leadership", id);
-            close(); // TODO add reconnect
+            close();
         }
     }
 
