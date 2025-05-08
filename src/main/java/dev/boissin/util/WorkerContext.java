@@ -19,9 +19,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.apache.curator.RetryPolicy;
 import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.CuratorFrameworkFactory;
-import org.apache.curator.framework.recipes.atomic.DistributedAtomicLong;
 import org.apache.curator.retry.ExponentialBackoffRetry;
-import org.apache.curator.retry.RetryNTimes;
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException.NodeExistsException;
 import org.slf4j.Logger;
@@ -34,7 +32,6 @@ import io.micrometer.prometheusmetrics.PrometheusMeterRegistry;
 public class WorkerContext {
 
     private static final Logger log = LoggerFactory.getLogger(WorkerContext.class);
-    private static final String WORKER_COUNTER_PATH = "/counters/workers";
     private static final String DEFAULT_NAMESPACE = "test-zk-project";
     private static final String NAMESPACE_ENV = "NAMESPACE";
     private static final String SERVICE_NAME = "dining-philosophers";
@@ -77,15 +74,18 @@ public class WorkerContext {
     public long getWorkerId() {
         return workerId.updateAndGet(id -> {
             if (id == null) {
-                final DistributedAtomicLong count = new DistributedAtomicLong(
-                    client,
-                    WORKER_COUNTER_PATH,
-                    new RetryNTimes(10, 10)
-                );
                 try {
-                    return count.increment().postValue();
+                    final String requestPath = "/instances/%s-".formatted(getServiceName());
+                    String path = client.create().creatingParentsIfNeeded()
+                            .withMode(CreateMode.EPHEMERAL_SEQUENTIAL).forPath(requestPath);
+                    if (path.endsWith("0")) {
+                        client.delete().forPath(path);
+                        path = client.create().creatingParentsIfNeeded()
+                            .withMode(CreateMode.EPHEMERAL_SEQUENTIAL).forPath(requestPath);
+                    }
+                    return Long.parseLong(path.substring(requestPath.length()));
                 } catch (Exception e) {
-                    log.error("Error when get worker id count.", e);
+                    log.error("Error when get worker id.", e);
                 }
             }
             return id;
