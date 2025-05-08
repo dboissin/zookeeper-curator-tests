@@ -57,6 +57,59 @@ docker-compose up -d --scale dining-philosophers=5
 | Java        | 21     | Implementation language          |
 | Traefik | 3.4.0   | Load Balancer       |
 
+## 📝 Data model
+
+```mermaid
+stateDiagram-v2
+  state "test-zk-project" as namespace
+  state "forks-mutex" as forksmutex
+  state "lease-count" as leasecount
+  state "1000" as 1000bis
+  state "..." as ...bis
+  state "..." as ...ter
+  state "..." as ...quater
+  state "..." as ...quinquies
+  state "url" as urlbis
+  state "locks" as semaphorelocks
+  state "dining-philosophers-0000000001" as diningphilosophers1
+  state "default-router-dining-philosophers-1" as defaultrouterdiningphilosophers1
+  state "dining-philosophers" as diningphilosophers
+  namespace --> instances
+  namespace --> philosophers
+  namespace --> traefik
+  instances --> diningphilosophers1
+  instances --> ...quinquies
+  philosophers --> events
+  philosophers --> forks
+  philosophers --> forksmutex
+  philosophers --> leader
+  philosophers --> leasecount
+  philosophers --> semaphore
+  events --> locks
+  events --> queue
+  forks --> 1000
+  forks --> ...
+  forksmutex --> 1000bis
+  forksmutex --> ...bis
+  semaphore --> leases
+  semaphore --> semaphorelocks
+  traefik --> defaultrouterdiningphilosophers1
+  traefik --> ...ter
+  traefik --> http
+  http --> routers
+  http --> services
+  routers --> rule
+  routers --> service
+  services --> diningphilosophers
+  diningphilosophers --> loadbalancer
+  loadbalancer --> healthcheck
+  healthcheck --> path
+  loadbalancer --> servers
+  servers --> 1
+  1 --> url
+  servers --> ...quater
+  ...quater --> urlbis
+```
 
 
 ## 🗄️ Project Structure
@@ -65,54 +118,57 @@ docker-compose up -d --scale dining-philosophers=5
 zookeeper-curator-tests
 ├── docker-compose.yml
 ├── Dockerfile
+├── docs
+│   └── philosopher_timeline.png
 ├── grafana
 │   └── Dining_philosophers.json
+├── LICENSE.md
 ├── pom.xml
 ├── prometheus.yml
 ├── README.md
 └── src
-    ├── main
-    │   ├── java
-    │   │   └── dev
-    │   │       └── boissin
-    │   │           ├── App.java
-    │   │           ├── controller
-    │   │           │   ├── EventsHandler.java
-    │   │           │   ├── MetricsHandler.java
-    │   │           │   ├── ReadinessHandler.java
-    │   │           │   ├── SimpleHttpServer.java
-    │   │           │   └── ViewHandler.java
-    │   │           ├── exception
-    │   │           │   ├── IllegalConcurrentForkUsageException.java
-    │   │           │   └── InvalidStatusCodeException.java
-    │   │           ├── model
-    │   │           │   ├── Event.java
-    │   │           │   └── StateEventCheckerResult.java
-    │   │           ├── queue
-    │   │           │   └── DiningPhilosophersQueue.java
-    │   │           ├── serializer
-    │   │           │   ├── RecordSerializationException.java
-    │   │           │   └── RecordSerializer.java
-    │   │           ├── service
-    │   │           │   ├── Philosopher.java
-    │   │           │   ├── PhilosopherManager.java
-    │   │           │   └── StateEventsChecker.java
-    │   │           └── util
-    │   │               └── WorkerContext.java
-    │   └── resources
-    │       ├── assets
-    │       │   └── view.html
-    │       └── logback.xml
-    └── test
-        └── java
-            └── dev
-                └── boissin
-                    └── src
-                        └── test
-                            └── resources
-
-23 directories, 25 files
+    └── main
+        ├── java
+        │   └── dev
+        │       └── boissin
+        │           ├── App.java
+        │           ├── controller
+        │           │   ├── EventsHandler.java
+        │           │   ├── MetricsHandler.java
+        │           │   ├── ReadinessHandler.java
+        │           │   ├── SimpleHttpServer.java
+        │           │   └── ViewHandler.java
+        │           ├── exception
+        │           │   ├── IllegalConcurrentForkUsageException.java
+        │           │   └── InvalidStatusCodeException.java
+        │           ├── model
+        │           │   ├── Event.java
+        │           │   └── StateEventCheckerResult.java
+        │           ├── queue
+        │           │   └── DiningPhilosophersQueue.java
+        │           ├── serializer
+        │           │   ├── RecordSerializationException.java
+        │           │   └── RecordSerializer.java
+        │           ├── service
+        │           │   ├── Philosopher.java
+        │           │   ├── PhilosopherManager.java
+        │           │   └── StateEventsChecker.java
+        │           └── util
+        │               └── WorkerContext.java
+        └── resources
+            ├── assets
+            │   └── view.html
+            └── logback.xml
+17 directories, 27 files
 ```
+## 📊 Monitoring
+
+![Monitoring](docs/monitoring.png)
+
+## 🌐 Philosophers activity timeline
+
+![Philosophers activity timeline](docs/philosopher_timeline.png)
+
 
 ## 📜 License & Attribution
 
