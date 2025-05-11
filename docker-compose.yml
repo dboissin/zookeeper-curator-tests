@@ -83,6 +83,15 @@ services:
       - zookeeper3
       - dining-philosophers
 
+  mcp-server:
+    build:
+      context: mcp/dining-philosophers-mcp-server
+      dockerfile: Dockerfile
+    ports:
+      - "4000:3000"
+    depends_on:
+      - dining-philosophers
+
 volumes:
   zookeeper1_data:
   zookeeper1_logs:
