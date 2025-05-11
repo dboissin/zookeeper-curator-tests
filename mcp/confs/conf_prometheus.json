@@ -1,0 +1,18 @@
+{
+    "mcpServers": {
+      "prometheus": {
+        "command": "docker",
+        "args": [
+          "run",
+          "--rm",
+          "-i",
+          "--network", "zookeeper-curator-project_default",
+          "-e", "PROMETHEUS_URL",
+          "prometheus-mcp-server:1.0.3"
+        ],
+        "env": {
+          "PROMETHEUS_URL": "http://prometheus:9090"
+        }
+      }
+    }
+  }

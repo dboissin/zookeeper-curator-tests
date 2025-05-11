@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "dining-philosophers": {
+      "command": "docker",
+      "args": [
+        "run",
+        "--rm",
+        "-i",
+        "--network", "zookeeper-curator-project_default",
+        "dining-philosophers-mcp-server:0.1.0"
+      ],
+      "env": {
+      }
+    }
+  }
+}

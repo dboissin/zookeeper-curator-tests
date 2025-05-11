@@ -1,0 +1,32 @@
+{
+    "name": "@modelcontextprotocol/server-dining-philosophers",
+    "version": "0.1.0",
+    "description": "MCP server for using Dining Philosophers",
+    "license": "AGPL-3.0",
+    "author": "Damien BOISSIN",
+    "bugs": {
+        "url": "https://github.com/dboissin/zookeeper-curator-tests"
+    },
+    "type": "module",
+    "bin": {
+        "mcp-server-dining-philosophers": "dist/index.js"
+    },
+    "files": [
+        "dist"
+    ],
+    "scripts": {
+        "build": "tsc && shx chmod +x dist/*.js",
+        "prepare": "npm run build",
+        "watch": "tsc --watch"
+    },
+    "dependencies": {
+        "@modelcontextprotocol/sdk": "^1.11.1",
+        "@types/node": "^22.15.17"
+    },
+    "devDependencies": {
+        "shx": "^0.3.4",
+        "typescript": "^5.8.3"
+    },
+    "main": "index.js",
+    "keywords": []
+}
