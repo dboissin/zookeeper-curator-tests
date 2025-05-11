@@ -7,14 +7,22 @@ import { z } from "zod";
 // Configuration
 const URL = process.argv[2] || "http://dining-philosophers:8080";
 
+interface Event {
+    philosopher: string;
+    state: string;
+    "start-time": number;
+    "end-time": number;
+    duration?: number;
+}
+
 // Create server instance
 const server = new McpServer({
     name: "dining-philosophers-mcp-server",
     version: "0.1.0"
 });
 
-server.tool("get-events", { pattern: z.string().optional() }, async (pattern) => {
-    const response = await fetch(`${URL}/events?pattern=${pattern}`);
+server.tool("get-events", {}, async () => {
+    const response = await fetch(`${URL}/events`);
     const events = await response.text();
     if (events === null) {
         return {
@@ -36,15 +44,41 @@ server.tool("get-events", { pattern: z.string().optional() }, async (pattern) =>
     };
 });
 
+server.tool("eat-duration", { philosopherId: z.string() }, async ({philosopherId}) => {
+    const response = await fetch(`${URL}/events`);
+    const events = await response.text();
+    if (events === null) {
+        return {
+            content: [
+                {
+                    type: "text",
+                    text: "No events found",
+                },
+            ],
+        };
+    }
+    const duration:number = JSON.parse(events).verifiedEvents
+        .filter((event:Event) => event.philosopher.endsWith(philosopherId) && event.state === "Eat")
+        .reduce((acc:number, event:Event) => acc + (event["end-time"] - event["start-time"]), 0);
+    return {
+        content: [
+            {
+                type: "text",
+                text: `Philosopher ${philosopherId} ate for ${duration}ms.`,
+            },
+        ],
+    };
+});
+
 server.prompt(
     "eat-time",
     { philosopherId: z.string() },
-    ({ philosopherId }) => ({
+    ({ philosopherId }: { philosopherId: string }) => ({
         messages: [{
             role: "user",
             content: {
                 type: "text",
-                text: `You use dining-philosophers get-events to get philosophers informations. For how long did Philosopher ${philosopherId} eat?`
+                text: `You use dining-philosophers eat-duration to get how long did Philosopher ${philosopherId} eat?`
             }
         }]
     })
