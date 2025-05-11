@@ -221,7 +221,7 @@ public class Philosopher implements Runnable {
                 this.latch.countDown();
             }
             // update semaphore leases counter at half number of fork
-            setLeasesCounter(forksIds.size() -1);
+            setLeasesCounter(forksIds.size() / 2);
         } else if (this.leftFork != null) {
             log.error("Philosopher {} no longer has a left fork {}. So, it will be stopped.", id, this.leftFork);
             running.set(false);
